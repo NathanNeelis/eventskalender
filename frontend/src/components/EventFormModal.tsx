@@ -171,6 +171,7 @@ export default function EventFormModal({ opened, onClose, event, initialDate }: 
   })
 
   const colleagueOptions = colleagues.map((c) => ({ value: c.id, label: c.name }))
+  const functionById = new Map(colleagues.map((c) => [c.id, c.function]))
 
   return (
     <Modal opened={opened} onClose={onClose} title={isEdit ? 'Edit event' : 'Add event'} size="xl">
@@ -265,8 +266,24 @@ export default function EventFormModal({ opened, onClose, event, initialDate }: 
 
           <MultiSelect
             label="Attending colleagues"
-            placeholder={form.values.attendee_ids.length ? undefined : 'Nobody yet — search colleagues'}
+            placeholder={
+              colleagues.length === 0
+                ? 'No team members yet — add them on the Team page'
+                : form.values.attendee_ids.length
+                  ? undefined
+                  : 'Nobody yet — search colleagues'
+            }
             data={colleagueOptions}
+            renderOption={({ option }) => (
+              <div>
+                <Text size="sm">{option.label}</Text>
+                {functionById.get(option.value) && (
+                  <Text size="xs" c="dimmed">
+                    {functionById.get(option.value)}
+                  </Text>
+                )}
+              </div>
+            )}
             searchable
             clearable
             hidePickedOptions

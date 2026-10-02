@@ -16,7 +16,6 @@ class Settings(BaseSettings):
     mongodb_password: str | None = None
 
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
-    colleague_seed_count: int = 30
 
     @property
     def mongodb_uri(self) -> str:

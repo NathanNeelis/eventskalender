@@ -14,8 +14,4 @@ async def init_db() -> None:
     db = get_db()
     await db.events.create_index("start")
     await db.events.create_index("organisation")
-
-    if await db.colleagues.count_documents({}) == 0:
-        await db.colleagues.insert_many(
-            [{"name": f"colleague{i}", "active": True} for i in range(1, settings.colleague_seed_count + 1)]
-        )
+    await db.events.create_index("attendee_ids")

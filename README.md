@@ -41,7 +41,7 @@ npm run dev
 
 Open http://localhost:5173. The Vite dev server proxies `/api` to the backend.
 
-On first start the backend creates 30 colleagues (`colleague1` … `colleague30`); rename them on the **Team** page.
+Add team members (name and function) on the **Team** page with the **Add team member** button.
 
 ## Features
 
@@ -61,8 +61,8 @@ On first start the backend creates 30 colleagues (`colleague1` … `colleague30`
 | GET/PUT/DELETE | `/api/events/{id}`                                            | Read / update / delete                   |
 | GET            | `/api/events/{id}/ics`                                        | Calendar file                            |
 | GET            | `/api/events/organisations`                                   | Distinct organisations                   |
-| GET            | `/api/colleagues`                                             | List colleagues                          |
-| PUT            | `/api/colleagues/{id}`                                        | Rename                                   |
+| GET/POST       | `/api/colleagues`                                             | List / add team members                  |
+| PUT            | `/api/colleagues/{id}`                                        | Edit name / function                     |
 | GET            | `/api/geocode?q=`                                             | Address search (OpenStreetMap Nominatim) |
 
 Times are stored as local wall-clock time (no timezone), which Outlook interprets in the user's own timezone.
