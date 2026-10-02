@@ -1,4 +1,4 @@
-# MDSCevents
+# Events Kalender
 
 Plan and visualise upcoming events for the department, and see who from the team is going.
 
@@ -16,10 +16,10 @@ Plan and visualise upcoming events for the department, and see who from the team
 
 The backend reads `../.env`:
 
-| Variable | Purpose |
-|---|---|
-| `MONGODB_HOST`, `MONGODB_PORT` | Mongo server |
-| `MONGODB_DATABASE` | Database name (default `events`) |
+| Variable                               | Purpose                                                  |
+| -------------------------------------- | -------------------------------------------------------- |
+| `MONGODB_HOST`, `MONGODB_PORT`         | Mongo server                                             |
+| `MONGODB_DATABASE`                     | Database name (default `events`)                         |
 | `MONGODB_USERNAME`, `MONGODB_PASSWORD` | Credentials (authenticated against the `admin` database) |
 
 `MONGODB_URI` is not used; the connection string is built from the variables above.
@@ -54,15 +54,15 @@ On first start the backend creates 30 colleagues (`colleague1` … `colleague30`
 
 ## API overview
 
-| Method | Path | |
-|---|---|---|
-| GET | `/api/events?from=&to=&organisation=&attending=&internal=&q=` | List/filter events |
-| POST | `/api/events` | Create |
-| GET/PUT/DELETE | `/api/events/{id}` | Read / update / delete |
-| GET | `/api/events/{id}/ics` | Calendar file |
-| GET | `/api/events/organisations` | Distinct organisations |
-| GET | `/api/colleagues` | List colleagues |
-| PUT | `/api/colleagues/{id}` | Rename |
-| GET | `/api/geocode?q=` | Address search (OpenStreetMap Nominatim) |
+| Method         | Path                                                          |                                          |
+| -------------- | ------------------------------------------------------------- | ---------------------------------------- |
+| GET            | `/api/events?from=&to=&organisation=&attending=&internal=&q=` | List/filter events                       |
+| POST           | `/api/events`                                                 | Create                                   |
+| GET/PUT/DELETE | `/api/events/{id}`                                            | Read / update / delete                   |
+| GET            | `/api/events/{id}/ics`                                        | Calendar file                            |
+| GET            | `/api/events/organisations`                                   | Distinct organisations                   |
+| GET            | `/api/colleagues`                                             | List colleagues                          |
+| PUT            | `/api/colleagues/{id}`                                        | Rename                                   |
+| GET            | `/api/geocode?q=`                                             | Address search (OpenStreetMap Nominatim) |
 
 Times are stored as local wall-clock time (no timezone), which Outlook interprets in the user's own timezone.
