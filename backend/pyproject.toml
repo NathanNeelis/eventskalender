@@ -1,0 +1,12 @@
+[project]
+name = "mdscevents-backend"
+version = "0.1.0"
+description = "MDSCevents API"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.142.2",
+    "httpx>=0.28.1",
+    "pydantic-settings>=2.15.0",
+    "pymongo>=4.10",
+    "uvicorn[standard]>=0.54.0",
+]

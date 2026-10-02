@@ -1,0 +1,13 @@
+body {
+  margin: 0;
+  background: var(--mantine-color-gray-0);
+}
+
+[data-mantine-color-scheme='dark'] body {
+  background: var(--mantine-color-dark-8);
+}
+
+.leaflet-container {
+  border-radius: var(--mantine-radius-md);
+  z-index: 0;
+}
