@@ -25,9 +25,13 @@ export interface MdscEvent extends EventInput {
   updated_at: string
 }
 
-export interface Colleague {
-  id: string
+export interface ColleagueInput {
   name: string
+  function: string
+}
+
+export interface Colleague extends ColleagueInput {
+  id: string
   active: boolean
 }
 

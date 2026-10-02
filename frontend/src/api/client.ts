@@ -1,4 +1,4 @@
-import type { Colleague, EventFilters, EventInput, GeocodeResult, MdscEvent } from './types'
+import type { Colleague, ColleagueInput, EventFilters, EventInput, GeocodeResult, MdscEvent } from './types'
 
 export class ApiError extends Error {
   status: number
@@ -51,8 +51,10 @@ export const api = {
   icsUrl: (id: string) => `/api/events/${id}/ics`,
 
   listColleagues: () => request<Colleague[]>('/colleagues'),
-  renameColleague: (id: string, name: string) =>
-    request<Colleague>(`/colleagues/${id}`, { method: 'PUT', body: JSON.stringify({ name }) }),
+  createColleague: (c: ColleagueInput) =>
+    request<Colleague>('/colleagues', { method: 'POST', body: JSON.stringify(c) }),
+  updateColleague: (id: string, c: ColleagueInput) =>
+    request<Colleague>(`/colleagues/${id}`, { method: 'PUT', body: JSON.stringify(c) }),
 
   geocode: (q: string) => request<GeocodeResult[]>(`/geocode?q=${encodeURIComponent(q)}`),
 }

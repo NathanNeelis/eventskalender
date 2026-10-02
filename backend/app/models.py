@@ -69,16 +69,30 @@ class EventOut(EventIn):
         )
 
 
-class ColleagueUpdate(BaseModel):
+class ColleagueIn(BaseModel):
     name: str = Field(min_length=1, max_length=100)
-    active: bool | None = None
+    function: str = Field(default="", max_length=100)
+
+    @model_validator(mode="after")
+    def strip(self) -> "ColleagueIn":
+        self.name = self.name.strip()
+        self.function = self.function.strip()
+        if not self.name:
+            raise ValueError("Name is required")
+        return self
 
 
 class ColleagueOut(BaseModel):
     id: str
     name: str
+    function: str = ""
     active: bool = True
 
     @classmethod
     def from_doc(cls, doc: dict[str, Any]) -> "ColleagueOut":
-        return cls(id=str(doc["_id"]), name=doc["name"], active=doc.get("active", True))
+        return cls(
+            id=str(doc["_id"]),
+            name=doc["name"],
+            function=doc.get("function", ""),
+            active=doc.get("active", True),
+        )

@@ -1,7 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { api } from './client'
-import type { Colleague, EventFilters, EventInput } from './types'
+import type { Colleague, ColleagueInput, EventFilters, EventInput } from './types'
 
 export function useEvents(filters: EventFilters) {
   return useQuery({
@@ -52,10 +52,18 @@ export function useDeleteEvent() {
   return useMutation({ mutationFn: api.deleteEvent, onSuccess: invalidate })
 }
 
-export function useRenameColleague() {
+export function useCreateColleague() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, name }: { id: string; name: string }) => api.renameColleague(id, name),
+    mutationFn: api.createColleague,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['colleagues'] }),
+  })
+}
+
+export function useUpdateColleague() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: ColleagueInput }) => api.updateColleague(id, data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['colleagues'] }),
   })
 }

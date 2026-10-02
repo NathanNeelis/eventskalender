@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, status
 from pymongo import ReturnDocument
 
 from ..db import get_db
-from ..models import ColleagueOut, ColleagueUpdate
+from ..models import ColleagueIn, ColleagueOut
 
 router = APIRouter(prefix="/colleagues", tags=["colleagues"])
 
@@ -14,14 +14,20 @@ async def list_colleagues():
     return [ColleagueOut.from_doc(d) async for d in cursor]
 
 
+@router.post("", response_model=ColleagueOut, status_code=status.HTTP_201_CREATED)
+async def create_colleague(colleague: ColleagueIn):
+    doc = colleague.model_dump() | {"active": True}
+    result = await get_db().colleagues.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    return ColleagueOut.from_doc(doc)
+
+
 @router.put("/{colleague_id}", response_model=ColleagueOut)
-async def update_colleague(colleague_id: str, update: ColleagueUpdate):
+async def update_colleague(colleague_id: str, colleague: ColleagueIn):
     if not ObjectId.is_valid(colleague_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Colleague not found")
-    changes = update.model_dump(exclude_none=True)
-    changes["name"] = changes["name"].strip()
     doc = await get_db().colleagues.find_one_and_update(
-        {"_id": ObjectId(colleague_id)}, {"$set": changes}, return_document=ReturnDocument.AFTER
+        {"_id": ObjectId(colleague_id)}, {"$set": colleague.model_dump()}, return_document=ReturnDocument.AFTER
     )
     if doc is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Colleague not found")
