@@ -107,7 +107,9 @@ async def run_agent(session: Session, user_message: str) -> AsyncIterator[dict[s
     """Yields UI events: thinking, delta, tool_start, tool_result, done, error."""
     async with session.lock:
         session.messages.append({"role": "user", "content": user_message})
-        system = {"role": "system", "content": build_system_prompt()}
+        # The user has now had the chance to say which event they meant
+        session.ctx.pop("ambiguous_event_ids", None)
+        system = {"role": "system", "content": build_system_prompt(user_message)}
 
         try:
             for _ in range(MAX_STEPS):
