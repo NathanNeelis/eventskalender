@@ -51,11 +51,29 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "update_event",
-            "description": "Change fields of an existing event. Only pass the fields that change.",
+            "description": "Change fields of an existing event, e.g. a new location or time. Pass ONLY the "
+            "fields the user asked to change; never re-send title or description unless asked. "
+            "Get the event_id from create_event or find_events.",
             "parameters": {
                 "type": "object",
                 "properties": {"event_id": {"type": "string"}, **_EVENT_FIELDS},
                 "required": ["event_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "find_events",
+            "description": "Search existing events by (part of) the title, organisation or location, optionally "
+            "within a date range. Use this to get the event_id of an event the user refers to by name.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Words from the event title, organisation or location"},
+                    "date_from": {"type": "string", "description": "Only events on/after this date, YYYY-MM-DD"},
+                    "date_to": {"type": "string", "description": "Only events on/before this date, YYYY-MM-DD"},
+                },
             },
         },
     },
@@ -163,13 +181,19 @@ def _build_event(fields: dict[str, Any], attendee_ids: list[str], location: Loca
 
 
 async def _geocode(address: str) -> Location:
-    """Best effort: try the full address, then without the first segment (often a room/hall name)."""
+    """Best effort: try the full address, then a few safer variants. Never guess without a place name."""
     loc = Location(address=address)
     if not address:
         return loc
+    segments = [s.strip() for s in address.split(",") if s.strip()]
     candidates = [address]
-    if "," in address:
-        candidates.append(address.split(",", 1)[1].strip())
+    if len(segments) >= 3:
+        # "Hall 7, Street 1, City": drop the room/hall but keep street + city
+        candidates.append(", ".join(segments[1:]))
+    if len(segments) >= 2:
+        # "Venue City, Street 1": the venue name alone is often specific enough (e.g. "RAI Amsterdam").
+        # Never search on a bare street name; that matches the same street in another city.
+        candidates.append(segments[0])
     for q in candidates:
         try:
             results = await geocode_address(q, limit=1, timeout=6)
@@ -212,6 +236,15 @@ def _doc_to_fields(doc: dict) -> dict[str, Any]:
         "invitation": doc.get("invitation", ""),
         "info_url": doc.get("info_url") or "",
     }
+
+
+def _check_not_ambiguous(event_id: ObjectId, ctx: dict) -> None:
+    """Refuse to change an event picked from several search matches before the user has chosen."""
+    if str(event_id) in ctx.get("ambiguous_event_ids", []):
+        raise ToolError(
+            "Several events matched the search. Do not guess: ask the user which event they mean "
+            "(list title and date), then make the change after they answer."
+        )
 
 
 def _oid(value: Any, what: str) -> ObjectId:
@@ -281,12 +314,14 @@ async def create_event(args: dict, ctx: dict) -> dict:
 
 async def update_event(args: dict, ctx: dict) -> dict:
     event_id = _oid(args.get("event_id"), "event_id")
+    _check_not_ambiguous(event_id, ctx)
     doc = await get_db().events.find_one({"_id": event_id})
     if doc is None:
         raise ToolError("Event not found")
 
     fields = _doc_to_fields(doc)
-    changes = {k: v for k, v in args.items() if k in _EVENT_FIELDS and v is not None}
+    # The model often re-sends every field; treat empty values as "unchanged" so nothing is wiped by accident
+    changes = {k: v for k, v in args.items() if k in _EVENT_FIELDS and v is not None and v != ""}
     fields.update(changes)
 
     location = Location(**(doc.get("location") or {}))
@@ -297,6 +332,34 @@ async def update_event(args: dict, ctx: dict) -> dict:
     updated = await events_service.update_event(event_id, event)
     ctx["event_id"] = str(event_id)
     return {"ok": True, "event": _event_summary(updated)}
+
+
+async def find_events(args: dict, ctx: dict) -> dict:
+    conditions: list[dict] = []
+    words = [w for w in re.split(r"\s+", _clean(args.get("query"))) if len(w) > 1]
+    for word in words:
+        # Every word must appear in the title, organisation or location (case-insensitive)
+        rx = {"$regex": re.escape(word), "$options": "i"}
+        conditions.append({"$or": [{"title": rx}, {"organisation": rx}, {"location.address": rx}]})
+    if _clean(args.get("date_from")):
+        start_of = datetime.combine(_parse_date(_clean(args["date_from"]), "date_from"), time.min)
+        conditions.append({"$or": [{"end": {"$gte": start_of}}, {"end": None, "start": {"$gte": start_of}}]})
+    if _clean(args.get("date_to")):
+        end_of = datetime.combine(_parse_date(_clean(args["date_to"]), "date_to") + timedelta(days=1), time.min)
+        conditions.append({"start": {"$lt": end_of}})
+
+    query = {"$and": conditions} if conditions else {}
+    docs = [d async for d in get_db().events.find(query).sort("start", 1).limit(11)]
+    result: dict = {"ok": True, "count": min(len(docs), 10), "events": [_event_summary(d) for d in docs[:10]]}
+    if len(docs) > 1:
+        # Block changes to any of these until the user has said which one they mean (see _check_not_ambiguous)
+        ctx["ambiguous_event_ids"] = [str(d["_id"]) for d in docs]
+        result["note"] = "Several events match. Ask the user which one they mean before changing anything."
+    if len(docs) > 10:
+        result["note"] = "More than 10 matches. Ask the user to be more specific (e.g. a date)."
+    if not docs:
+        result["note"] = "No matching events. Try fewer or different words."
+    return result
 
 
 async def list_team_members(args: dict, ctx: dict) -> dict:
@@ -328,6 +391,7 @@ async def find_team_members(args: dict, ctx: dict) -> dict:
 
 async def add_attendees(args: dict, ctx: dict) -> dict:
     event_id = _oid(args.get("event_id"), "event_id")
+    _check_not_ambiguous(event_id, ctx)
     ids = [_oid(i, "member id") for i in (args.get("member_ids") or [])]
     if not ids:
         raise ToolError("member_ids is empty")
@@ -354,6 +418,7 @@ async def add_attendees(args: dict, ctx: dict) -> dict:
 TOOLS = {
     "create_event": create_event,
     "update_event": update_event,
+    "find_events": find_events,
     "list_team_members": list_team_members,
     "find_team_members": find_team_members,
     "add_attendees": add_attendees,
