@@ -11,6 +11,15 @@ export function useEvents(filters: EventFilters) {
   })
 }
 
+export function useEvent(id: string | null) {
+  return useQuery({
+    queryKey: ['event', id],
+    queryFn: () => api.getEvent(id!),
+    enabled: Boolean(id),
+    retry: false,
+  })
+}
+
 export function useOrganisations() {
   return useQuery({ queryKey: ['organisations'], queryFn: api.listOrganisations })
 }

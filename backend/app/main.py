@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .db import client, get_db, init_db
-from .routers import colleagues, events, geocode
+from .routers import agent, colleagues, events, geocode, stream
 
 
 @asynccontextmanager
@@ -24,7 +24,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for r in (events.router, colleagues.router, geocode.router):
+for r in (events.router, colleagues.router, geocode.router, stream.router, agent.router):
     app.include_router(r, prefix="/api")
 
 

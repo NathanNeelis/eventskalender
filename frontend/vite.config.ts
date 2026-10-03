@@ -6,7 +6,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://127.0.0.1:8000',
+      // Override with API_TARGET=http://127.0.0.1:8001 npm run dev to use another backend
+      '/api': process.env.API_TARGET ?? 'http://127.0.0.1:8000',
     },
   },
 })

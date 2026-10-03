@@ -3,10 +3,10 @@ from datetime import date, datetime, time, timedelta
 
 from bson import ObjectId
 from fastapi import APIRouter, HTTPException, Query, Response, status
-from pymongo import ReturnDocument
 
 from ..db import get_db
 from ..models import EventIn, EventOut
+from ..services import events_service
 from ..services.ics import build_ics
 
 router = APIRouter(prefix="/events", tags=["events"])
@@ -73,20 +73,12 @@ async def get_event(event_id: str):
 
 @router.post("", response_model=EventOut, status_code=status.HTTP_201_CREATED)
 async def create_event(event: EventIn):
-    now = datetime.now()
-    doc = event.to_doc() | {"created_at": now, "updated_at": now}
-    result = await get_db().events.insert_one(doc)
-    doc["_id"] = result.inserted_id
-    return EventOut.from_doc(doc)
+    return EventOut.from_doc(await events_service.create_event(event))
 
 
 @router.put("/{event_id}", response_model=EventOut)
 async def update_event(event_id: str, event: EventIn):
-    doc = await get_db().events.find_one_and_update(
-        {"_id": _oid(event_id)},
-        {"$set": event.to_doc() | {"updated_at": datetime.now()}},
-        return_document=ReturnDocument.AFTER,
-    )
+    doc = await events_service.update_event(_oid(event_id), event)
     if doc is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Event not found")
     return EventOut.from_doc(doc)
@@ -94,8 +86,7 @@ async def update_event(event_id: str, event: EventIn):
 
 @router.delete("/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_event(event_id: str):
-    result = await get_db().events.delete_one({"_id": _oid(event_id)})
-    if result.deleted_count == 0:
+    if not await events_service.delete_event(_oid(event_id)):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Event not found")
 
 

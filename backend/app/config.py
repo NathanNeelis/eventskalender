@@ -17,6 +17,13 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
+    # Local LLM for the chat agent
+    ollama_url: str = "http://localhost:11434"
+    ollama_model: str = "gpt-oss:20b"
+    ollama_think: str = "low"  # gpt-oss reasoning effort: low / medium / high
+    ollama_num_ctx: int = 16384
+    timezone: str = "Europe/Amsterdam"
+
     @property
     def mongodb_uri(self) -> str:
         auth = ""
