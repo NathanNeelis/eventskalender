@@ -43,6 +43,7 @@ function filtersToParams(f: EventFilters): string {
 
 export const api = {
   listEvents: (f: EventFilters) => request<MdscEvent[]>(`/events${filtersToParams(f)}`),
+  getEvent: (id: string) => request<MdscEvent>(`/events/${id}`),
   listOrganisations: () => request<string[]>('/events/organisations'),
   createEvent: (e: EventInput) => request<MdscEvent>('/events', { method: 'POST', body: JSON.stringify(e) }),
   updateEvent: (id: string, e: EventInput) =>

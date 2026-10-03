@@ -4,6 +4,7 @@ from pymongo import ReturnDocument
 
 from ..db import get_db
 from ..models import ColleagueIn, ColleagueOut
+from ..services.bus import publish
 
 router = APIRouter(prefix="/colleagues", tags=["colleagues"])
 
@@ -19,6 +20,7 @@ async def create_colleague(colleague: ColleagueIn):
     doc = colleague.model_dump() | {"active": True}
     result = await get_db().colleagues.insert_one(doc)
     doc["_id"] = result.inserted_id
+    publish("colleagues_changed", action="created", id=str(doc["_id"]))
     return ColleagueOut.from_doc(doc)
 
 
@@ -31,4 +33,5 @@ async def update_colleague(colleague_id: str, colleague: ColleagueIn):
     )
     if doc is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Colleague not found")
+    publish("colleagues_changed", action="updated", id=colleague_id)
     return ColleagueOut.from_doc(doc)

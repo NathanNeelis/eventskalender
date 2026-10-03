@@ -1,0 +1,75 @@
+.window {
+  width: min(420px, calc(100vw - 32px));
+  height: min(640px, calc(100vh - 100px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--mantine-radius-lg);
+}
+
+.header {
+  border-bottom: 1px solid var(--mantine-color-default-border);
+  flex-shrink: 0;
+}
+
+.messages {
+  flex: 1;
+  min-height: 0;
+}
+
+.footer {
+  border-top: 1px solid var(--mantine-color-default-border);
+  flex-shrink: 0;
+}
+
+.userBubble,
+.assistantBubble {
+  max-width: 88%;
+  padding: 8px 12px;
+  border-radius: var(--mantine-radius-lg);
+  font-size: var(--mantine-font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.userBubble {
+  align-self: flex-end;
+  background: var(--mantine-primary-color-filled);
+  color: var(--mantine-color-white);
+  border-bottom-right-radius: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.assistantBubble {
+  align-self: flex-start;
+  background: var(--mantine-color-default-hover);
+  border-bottom-left-radius: 4px;
+}
+
+.userText {
+  white-space: pre-wrap;
+}
+
+.step {
+  padding: 2px 8px;
+  border-radius: var(--mantine-radius-sm);
+  background: var(--mantine-color-body);
+}
+
+.markdown {
+  line-height: 1.5;
+}
+
+.markdown p {
+  margin: 0 0 6px;
+}
+
+.markdown p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown ul,
+.markdown ol {
+  margin: 4px 0;
+  padding-left: 20px;
+}

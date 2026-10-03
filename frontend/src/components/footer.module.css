@@ -1,0 +1,21 @@
+.footer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: var(--mantine-spacing-xl);
+  padding-top: var(--mantine-spacing-lg);
+  border-top: 1px solid var(--mantine-color-default-border);
+}
+
+.logo {
+  display: block;
+  width: 150px;
+  max-width: 60vw;
+  height: auto;
+  margin: 1rem auto;
+}
+
+/* Mantine sets this attribute on <html>; turn the logo white only in dark mode */
+:global([data-mantine-color-scheme='dark']) .logo {
+  filter: brightness(0) invert(1);
+}

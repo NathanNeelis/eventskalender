@@ -30,7 +30,3 @@ export function occursOn(e: Pick<MdscEvent, 'start' | 'end'>, day: dayjs.Dayjs):
   const d = day.startOf('day')
   return !d.isBefore(start) && !d.isAfter(end)
 }
-
-export function isUrl(text: string): boolean {
-  return /^https?:\/\/\S+$/i.test(text.trim())
-}

@@ -3,7 +3,7 @@ import { IconBuilding, IconCalendar, IconExternalLink, IconMapPin } from '@table
 import type { ReactNode } from 'react'
 import { MapContainer, Marker, TileLayer } from 'react-leaflet'
 import type { MdscEvent } from '../api/types'
-import { formatEventWhen, isUrl } from '../utils/dates'
+import { formatEventWhen } from '../utils/dates'
 import EventActions from './EventActions'
 import { AttendeeList, TypeBadge } from './EventBadges'
 import { TILE_ATTRIBUTION, TILE_URL } from './leaflet'
@@ -12,6 +12,24 @@ interface Props {
   event: MdscEvent | null
   onClose: () => void
   onEdit: (event: MdscEvent) => void
+}
+
+/** Renders text with any http(s) URLs turned into links. */
+function Linkified({ text }: { text: string }) {
+  const parts = text.split(/(https?:\/\/[^\s<>"]+[^\s<>".,;:!?)])/g)
+  return (
+    <>
+      {parts.map((part, i) =>
+        i % 2 === 1 ? (
+          <Anchor key={i} href={part} target="_blank" rel="noreferrer" inherit>
+            {part} <IconExternalLink size={14} />
+          </Anchor>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  )
 }
 
 function Section({ label, children }: { label: string; children: ReactNode }) {
@@ -71,13 +89,9 @@ export default function EventDetailModal({ event, onClose, onEdit }: Props) {
 
           {event.invitation && (
             <Section label="Invitation">
-              {isUrl(event.invitation) ? (
-                <Anchor href={event.invitation.trim()} target="_blank" rel="noreferrer">
-                  {event.invitation.trim()} <IconExternalLink size={14} />
-                </Anchor>
-              ) : (
-                <Text style={{ whiteSpace: 'pre-wrap' }}>{event.invitation}</Text>
-              )}
+              <Text style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                <Linkified text={event.invitation} />
+              </Text>
             </Section>
           )}
 
