@@ -10,7 +10,8 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
-import httpx
+import requests
+import urllib3
 
 from ..config import settings
 from .prompt import build_system_prompt
@@ -49,56 +50,112 @@ def reset_session(session_id: str) -> None:
     _sessions.pop(session_id, None)
 
 
+LLM_URL = settings.ollama_url + settings.llm_chat_endpoint
+IS_OLLAMA = settings.llm_chat_endpoint == "/api/chat"
+
+if not settings.llm_verify_ssl:
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+def _normalize(data: dict) -> dict:
+    """Return a response in Ollama's shape ({"message": {...}}), also when the server
+    answered in OpenAI's chat-completions shape ({"choices": [{"message": {...}}]})."""
+    if "choices" in data:
+        msg = (data["choices"] or [{}])[0].get("message") or {}
+        return {
+            "message": {
+                "content": msg.get("content") or "",
+                "thinking": msg.get("reasoning_content") or msg.get("reasoning") or "",
+                "tool_calls": msg.get("tool_calls") or [],
+            }
+        }
+    return data
+
+
 async def _ollama_stream(messages: list[dict]) -> AsyncIterator[dict]:
     """
-    Stream chat responses from Ollama as decoded JSON chunks.
+    Stream chat responses from the LLM as decoded JSON chunks.
 
-    The request enables tool calling and optionally exposes the model's
-    internal reasoning (`think`). Each yielded chunk contains the fields
-    returned by Ollama, typically including `message.content`,
-    `message.thinking`, and `message.tool_calls`.
+    The request enables tool calling and, for Ollama, optionally exposes the
+    model's internal reasoning (`think`). Each yielded chunk is in Ollama's
+    shape, typically including `message.content`, `message.thinking`, and
+    `message.tool_calls`. With LLM_STREAM=false the whole reply is yielded
+    as a single chunk.
 
     Raises:
-        RuntimeError: If Ollama returns a non-200 response or reports an
-            error in a streamed chunk.
-        json.JSONDecodeError: If Ollama sends a malformed JSON line.
+        RuntimeError: If the server returns a non-200 response, reports an
+            error in a streamed chunk, or sends a line that is not JSON.
     """
     payload = {
         "model": settings.ollama_model,
         "messages": messages,
         "tools": TOOL_SCHEMAS,
-        "stream": True,
-        "think": settings.ollama_think,
-        "options": {"num_ctx": settings.ollama_num_ctx, "temperature": 0.2},
+        "stream": settings.llm_stream,
     }
+    if IS_OLLAMA:
+        payload["think"] = settings.ollama_think
+        payload["options"] = {"num_ctx": settings.ollama_num_ctx, "temperature": 0.2}
 
-    # Use a generous read timeout because generation can take several minutes,
-    # while keeping connection/setup timeouts relatively short.
-    timeout = httpx.Timeout(connect=10, read=300, write=30, pool=10)
+    headers = {"Content-Type": "application/json"}
+    if settings.llm_api_key:
+        headers["Authorization"] = settings.llm_api_key
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        async with client.stream(
-            "POST",
-            f"{settings.ollama_url}/api/chat",
-            json=payload,
-        ) as resp:
-            if resp.status_code != 200:
-                # Read the response body so Ollama's error message is included
-                # in the exception instead of returning only the HTTP status.
-                body = (await resp.aread()).decode(errors="replace")
-                raise RuntimeError(f"Ollama returned {resp.status_code}: {body[:300]}")
+    # (connect, read) timeouts: a generous read timeout because generation can take
+    # several minutes, while keeping the connection timeout relatively short.
+    timeout = (10, 300)
 
-            # Ollama sends one JSON object per line while the response is generated.
-            async for line in resp.aiter_lines():
-                if line.strip():
+    # requests is blocking, so every call that waits on the network runs in a worker
+    # thread to keep the event loop free for other requests.
+    resp = await asyncio.to_thread(
+        requests.post,
+        LLM_URL,
+        json=payload,
+        headers=headers,
+        stream=settings.llm_stream,
+        timeout=timeout,
+        verify=settings.llm_verify_ssl,
+    )
+    try:
+        if resp.status_code != 200:
+            # Read the response body so the server's error message is included
+            # in the exception instead of returning only the HTTP status.
+            body = await asyncio.to_thread(lambda: resp.content.decode(errors="replace"))
+            raise RuntimeError(f"LLM returned {resp.status_code}: {body[:300]}")
+
+        if not settings.llm_stream:
+            try:
+                data = resp.json()
+            except ValueError:
+                content_type = resp.headers.get("content-type", "unknown")
+                raise RuntimeError(
+                    f"Unexpected response from {LLM_URL} (content-type: {content_type}): {resp.text[:300]!r}"
+                ) from None
+            if "error" in data:
+                raise RuntimeError(f"LLM error: {data['error']}")
+            yield _normalize(data)
+            return
+
+        # Ollama sends one JSON object per line while the response is generated.
+        lines = resp.iter_lines(decode_unicode=True)
+        while (line := await asyncio.to_thread(next, lines, None)) is not None:
+            if line.strip():
+                try:
                     chunk = json.loads(line)
+                except json.JSONDecodeError:
+                    # Not Ollama's one-JSON-object-per-line format; show what we got instead
+                    content_type = resp.headers.get("content-type", "unknown")
+                    raise RuntimeError(
+                        f"Unexpected response from {LLM_URL} (content-type: {content_type}): {line[:300]!r}"
+                    ) from None
 
-                    # Ollama can report application-level errors inside an otherwise
-                    # successful HTTP stream, so check each chunk before yielding it.
-                    if "error" in chunk:
-                        raise RuntimeError(f"Ollama error: {chunk['error']}")
+                # Ollama can report application-level errors inside an otherwise
+                # successful HTTP stream, so check each chunk before yielding it.
+                if "error" in chunk:
+                    raise RuntimeError(f"Ollama error: {chunk['error']}")
 
-                    yield chunk
+                yield chunk
+    finally:
+        resp.close()
 
 
 
@@ -130,7 +187,7 @@ async def run_agent(session: Session, user_message: str) -> AsyncIterator[dict[s
                         tool_calls.extend(msg["tool_calls"])
 
                 assistant: dict[str, Any] = {"role": "assistant", "content": content}
-                if thinking:
+                if thinking and IS_OLLAMA:
                     assistant["thinking"] = thinking
                 if tool_calls:
                     assistant["tool_calls"] = tool_calls
@@ -152,15 +209,19 @@ async def run_agent(session: Session, user_message: str) -> AsyncIterator[dict[s
                     yield {"type": "tool_start", "name": name, "args": args}
                     result = await run_tool(name, args, session.ctx)
                     yield {"type": "tool_result", "name": name, "result": result}
-                    session.messages.append(
-                        {"role": "tool", "tool_name": name, "content": json.dumps(result, default=str)}
-                    )
+                    tool_msg = {"role": "tool", "content": json.dumps(result, default=str)}
+                    # OpenAI-style servers link results to calls by id; Ollama by name
+                    if call.get("id"):
+                        tool_msg["tool_call_id"] = call["id"]
+                    if IS_OLLAMA:
+                        tool_msg["tool_name"] = name
+                    session.messages.append(tool_msg)
 
             yield {"type": "error", "message": "The assistant needed too many steps. Please try rephrasing."}
-        except httpx.ConnectError:
+        except requests.ConnectionError:
             # Nothing was processed; drop the message so a retry doesn't send it twice
             if session.messages and session.messages[-1]["role"] == "user":
                 session.messages.pop()
-            yield {"type": "error", "message": f"Cannot reach Ollama at {settings.ollama_url}. Is it running?"}
-        except (httpx.HTTPError, RuntimeError) as exc:
+            yield {"type": "error", "message": f"Cannot reach the LLM at {LLM_URL}. Is it running?"}
+        except (requests.RequestException, RuntimeError) as exc:
             yield {"type": "error", "message": str(exc)}

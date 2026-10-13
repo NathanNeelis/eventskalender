@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     ollama_model: str = "gpt-oss:20b"
     ollama_think: str = "low"  # gpt-oss reasoning effort: low / medium / high
     ollama_num_ctx: int = 16384
+    # Settings for a non-Ollama (e.g. internal, OpenAI-compatible) LLM server
+    llm_chat_endpoint: str = "/api/chat"  # appended to ollama_url
+    llm_api_key: str | None = None  # sent as-is in the Authorization header
+    llm_verify_ssl: bool = True
+    llm_stream: bool = True
     timezone: str = "Europe/Amsterdam"
 
     @property
