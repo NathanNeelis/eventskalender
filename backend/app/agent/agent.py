@@ -79,8 +79,9 @@ async def _ollama_stream(messages: list[dict]) -> AsyncIterator[dict]:
     The request enables tool calling and, for Ollama, optionally exposes the
     model's internal reasoning (`think`). Each yielded chunk is in Ollama's
     shape, typically including `message.content`, `message.thinking`, and
-    `message.tool_calls`. With LLM_STREAM=false the whole reply is yielded
-    as a single chunk.
+    `message.tool_calls`. Both Ollama's line-per-chunk stream and OpenAI's
+    server-sent events are understood. With LLM_STREAM=false the whole reply
+    is yielded as a single chunk, unless the server streams anyway.
 
     Raises:
         RuntimeError: If the server returns a non-200 response, reports an
@@ -122,11 +123,14 @@ async def _ollama_stream(messages: list[dict]) -> AsyncIterator[dict]:
             body = await asyncio.to_thread(lambda: resp.content.decode(errors="replace"))
             raise RuntimeError(f"LLM returned {resp.status_code}: {body[:300]}")
 
-        if not settings.llm_stream:
+        content_type = resp.headers.get("content-type", "unknown")
+        is_sse = content_type.startswith("text/event-stream")
+
+        # Some servers stream even when asked not to, so look at what actually came back
+        if not settings.llm_stream and not is_sse:
             try:
                 data = resp.json()
             except ValueError:
-                content_type = resp.headers.get("content-type", "unknown")
                 raise RuntimeError(
                     f"Unexpected response from {LLM_URL} (content-type: {content_type}): {resp.text[:300]!r}"
                 ) from None
@@ -135,25 +139,62 @@ async def _ollama_stream(messages: list[dict]) -> AsyncIterator[dict]:
             yield _normalize(data)
             return
 
-        # Ollama sends one JSON object per line while the response is generated.
+        # Ollama sends one JSON object per line; OpenAI-style servers send
+        # server-sent events ("data: {...}" lines, ending with "data: [DONE]").
+        # OpenAI streams tool calls in fragments, collected here per index.
+        sse_tool_calls: dict[int, dict] = {}
         lines = resp.iter_lines(decode_unicode=True)
         while (line := await asyncio.to_thread(next, lines, None)) is not None:
-            if line.strip():
-                try:
-                    chunk = json.loads(line)
-                except json.JSONDecodeError:
-                    # Not Ollama's one-JSON-object-per-line format; show what we got instead
-                    content_type = resp.headers.get("content-type", "unknown")
-                    raise RuntimeError(
-                        f"Unexpected response from {LLM_URL} (content-type: {content_type}): {line[:300]!r}"
-                    ) from None
+            if isinstance(line, bytes):
+                line = line.decode("utf-8", errors="replace")
+            line = line.strip()
+            if not line or line.startswith(":") or line.startswith("event:"):
+                continue
+            if line.startswith("data:"):
+                line = line[len("data:"):].strip()
+                if line == "[DONE]":
+                    break
+            try:
+                chunk = json.loads(line)
+            except json.JSONDecodeError:
+                # Neither format; show what we got instead
+                raise RuntimeError(
+                    f"Unexpected response from {LLM_URL} (content-type: {content_type}): {line[:300]!r}"
+                ) from None
 
-                # Ollama can report application-level errors inside an otherwise
-                # successful HTTP stream, so check each chunk before yielding it.
-                if "error" in chunk:
-                    raise RuntimeError(f"Ollama error: {chunk['error']}")
+            # The server can report application-level errors inside an otherwise
+            # successful HTTP stream, so check each chunk before yielding it.
+            if "error" in chunk:
+                raise RuntimeError(f"LLM error: {chunk['error']}")
 
+            if "choices" not in chunk:
                 yield chunk
+                continue
+
+            delta = (chunk["choices"] or [{}])[0].get("delta") or {}
+            for tc in delta.get("tool_calls") or []:
+                call = sse_tool_calls.setdefault(
+                    tc.get("index", len(sse_tool_calls)),
+                    {"id": None, "type": "function", "function": {"name": "", "arguments": ""}},
+                )
+                if tc.get("id"):
+                    call["id"] = tc["id"]
+                fn = tc.get("function") or {}
+                call["function"]["name"] += fn.get("name") or ""
+                args = fn.get("arguments") or ""
+                call["function"]["arguments"] += args if isinstance(args, str) else json.dumps(args)
+            yield {
+                "message": {
+                    "content": delta.get("content") or "",
+                    "thinking": delta.get("reasoning_content") or delta.get("reasoning") or "",
+                }
+            }
+
+        if sse_tool_calls:
+            for call in sse_tool_calls.values():
+                if call["id"] is None:
+                    del call["id"]
+            yield {"message": {"tool_calls": [sse_tool_calls[i] for i in sorted(sse_tool_calls)]}}
     finally:
         resp.close()
 
